@@ -13,7 +13,7 @@ const FlowBoard = () => {
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState('');
 
-  const clientName = 'Agence Digital Pro';
+  const clientName = 'KPI TEST';
   const healthScore = 78;
 
   const kpiStructure = {
