@@ -1,471 +1,526 @@
-import React, { useState, useEffect } from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { useState, useEffect, useCallback, useRef } from "react";
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+} from "recharts";
 
-const FlowBoard = () => {
-  const [activeTab, setActiveTab] = useState('sales');
-  const [period, setPeriod] = useState('week');
-  const [periodIndex, setPeriodIndex] = useState(0);
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [apiKey, setApiKey] = useState('');
-  const [showApiForm, setShowApiForm] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [analysisResult, setAnalysisResult] = useState('');
-
-  const clientName = 'KPI TEST';
-  const healthScore = 78;
-
-  const kpiStructure = {
-    sales: [
-      { name: 'Revenus totaux', icon: '💵', value: 45230, trend: 12.5, unit: '€' },
-      { name: 'Nb commandes', icon: '📦', value: 342, trend: 8.3, unit: '' },
-      { name: 'Panier moyen', icon: '🛒', value: 132, trend: 5.2, unit: '€' },
-      { name: 'Conversion', icon: '✅', value: 3.8, trend: -2.1, unit: '%' },
-      { name: 'Clients acquis', icon: '👤', value: 89, trend: 15.7, unit: '' },
-      { name: 'Churn', icon: '⚠️', value: 2.3, trend: -0.8, unit: '%' },
+// ─── KPI CONFIG ───────────────────────────────────────────────────────────────
+const TABS = [
+  {
+    id: "ventes", label: "Ventes", emoji: "💰", color: "#C8F464",
+    kpis: [
+      { key: "ca",        label: "Chiffre d'affaires", icon: "💶", unit: "€",  csvKey: "Chiffre d'affaires" },
+      { key: "commandes", label: "Commandes",           icon: "📦", unit: "",   csvKey: "Commandes" },
+      { key: "panier",    label: "Panier moyen",        icon: "🛒", unit: "€",  csvKey: "Panier moyen" },
+      { key: "abandon",   label: "Taux d'abandon",      icon: "🚪", unit: "%",  csvKey: "Taux d'abandon" },
+      { key: "clients",   label: "Nouveaux clients",    icon: "👤", unit: "",   csvKey: "Nouveaux clients" },
+      { key: "note",      label: "Note moyenne",        icon: "⭐", unit: "/5", csvKey: "Note moyenne" },
     ],
-    ads: [
-      { name: 'Budget dépensé', icon: '💰', value: 12450, trend: 8.2, unit: '€' },
-      { name: 'Impressions', icon: '👁️', value: 245800, trend: 22.5, unit: '' },
-      { name: 'Clics', icon: '🖱️', value: 8934, trend: 18.3, unit: '' },
-      { name: 'CTR', icon: '📊', value: 3.64, trend: 5.1, unit: '%' },
-      { name: 'CPC', icon: '💶', value: 1.39, trend: -3.2, unit: '€' },
-      { name: 'ROAS', icon: '🎯', value: 3.42, trend: 12.8, unit: '€' },
+  },
+  {
+    id: "pub", label: "Pub", emoji: "📣", color: "#F4A261",
+    kpis: [
+      { key: "depenses",    label: "Dépenses pub",   icon: "💸", unit: "€", csvKey: "Dépenses pub" },
+      { key: "roas",        label: "ROAS",           icon: "📈", unit: "x", csvKey: "ROAS" },
+      { key: "cpa",         label: "CPA",            icon: "🎯", unit: "€", csvKey: "CPA" },
+      { key: "impressions", label: "Impressions",    icon: "👁️", unit: "",  csvKey: "Impressions" },
+      { key: "ctr",         label: "CTR",            icon: "🖱️", unit: "%", csvKey: "CTR" },
+      { key: "clics",       label: "Clics",          icon: "👆", unit: "",  csvKey: "Clics" },
     ],
-    social: [
-      { name: 'Followers nets', icon: '📈', value: 5240, trend: 18.9, unit: '' },
-      { name: 'Engagement', icon: '💬', value: 8932, trend: 24.3, unit: '' },
-      { name: 'Reach', icon: '🌍', value: 124500, trend: 31.2, unit: '' },
-      { name: 'Sauvegarde', icon: '❤️', value: 3421, trend: 19.5, unit: '' },
-      { name: 'Partages', icon: '🔄', value: 1205, trend: 27.8, unit: '' },
-      { name: 'Mentions', icon: '@', value: 456, trend: -5.3, unit: '' },
+  },
+  {
+    id: "reseaux", label: "Réseaux", emoji: "📱", color: "#9B8EFF",
+    kpis: [
+      { key: "abonnes",    label: "Abonnés",          icon: "👥", unit: "",  csvKey: "Abonnés" },
+      { key: "engagement", label: "Taux engagement",  icon: "💬", unit: "%", csvKey: "Taux engagement" },
+      { key: "posts",      label: "Posts publiés",    icon: "📝", unit: "",  csvKey: "Posts publiés" },
+      { key: "portee",     label: "Portée organique", icon: "📡", unit: "",  csvKey: "Portée organique" },
+      { key: "partages",   label: "Partages",         icon: "🔄", unit: "",  csvKey: "Partages" },
+      { key: "messages",   label: "Messages reçus",   icon: "💌", unit: "",  csvKey: "Messages reçus" },
     ],
-    email: [
-      { name: 'Abonnés', icon: '✉️', value: 12450, trend: 9.2, unit: '' },
-      { name: 'Taux ouverture', icon: '📂', value: 24.5, trend: 3.8, unit: '%' },
-      { name: 'Taux clic', icon: '🔗', value: 3.2, trend: 5.1, unit: '%' },
-      { name: 'Désabos', icon: '❌', value: 34, trend: -12.5, unit: '' },
-      { name: 'Revenus générés', icon: '💸', value: 8932, trend: 14.2, unit: '€' },
-      { name: 'Segmentation', icon: '🎲', value: 6, trend: 0, unit: 'listes' },
+  },
+  {
+    id: "emails", label: "Emails", emoji: "📧", color: "#4CC9F0",
+    kpis: [
+      { key: "campagnes",     label: "Campagnes",      icon: "📨", unit: "",  csvKey: "Campagnes envoyées" },
+      { key: "ouverture",     label: "Taux ouverture", icon: "📬", unit: "%", csvKey: "Taux ouverture" },
+      { key: "clic_email",    label: "Taux de clic",   icon: "🖱️", unit: "%", csvKey: "Taux de clic" },
+      { key: "liste",         label: "Liste abonnés",  icon: "📋", unit: "",  csvKey: "Liste abonnés" },
+      { key: "desabo",        label: "Désabonnements", icon: "📉", unit: "%", csvKey: "Désabonnements" },
+      { key: "revenus_email", label: "Revenus email",  icon: "💰", unit: "€", csvKey: "Revenus email" },
     ],
-    launch: [
-      { name: 'Produits lancés', icon: '🚀', value: 4, trend: 100, unit: '' },
-      { name: 'Pré-commandes', icon: '📋', value: 1234, trend: 45.6, unit: '' },
-      { name: 'Buzz score', icon: '⭐', value: 8.2, trend: 22.1, unit: '/10' },
-      { name: 'Couverture média', icon: '📰', value: 23, trend: 76.8, unit: 'articles' },
-      { name: 'Social mentions', icon: '💭', value: 5621, trend: 89.3, unit: '' },
-      { name: 'Conversion pré-cmd', icon: '🎁', value: 12.3, trend: 34.5, unit: '%' },
+  },
+  {
+    id: "lancements", label: "Lancements", emoji: "🚀", color: "#FF6B9D",
+    kpis: [
+      { key: "nb",            label: "Lancements",        icon: "🎉", unit: "",   csvKey: "Lancements" },
+      { key: "preinscr",      label: "Pré-inscriptions",  icon: "✍️", unit: "",   csvKey: "Pré-inscriptions" },
+      { key: "revenu",        label: "Revenu lancement",  icon: "💎", unit: "€",  csvKey: "Revenu lancement" },
+      { key: "taux_conv",     label: "Taux conversion",   icon: "🏆", unit: "%",  csvKey: "Taux conversion" },
+      { key: "satisfaction",  label: "Score satisfaction", icon: "😊", unit: "/5", csvKey: "Score satisfaction" },
+      { key: "remboursements",label: "Remboursements",    icon: "↩️", unit: "",   csvKey: "Remboursements" },
     ],
-  };
+  },
+];
 
-  const chartData = [
-    { name: 'Lun', value: 2400 },
-    { name: 'Mar', value: 3210 },
-    { name: 'Mer', value: 2290 },
-    { name: 'Jeu', value: 3800 },
-    { name: 'Ven', value: 4300 },
-    { name: 'Sam', value: 3890 },
-    { name: 'Dim', value: 4100 },
-  ];
+// KPIs où une baisse est positive
+const NEG_GOOD = new Set(["abandon","desabo","cpa","remboursements","depenses"]);
 
-  const tabConfig = {
-    sales: { label: 'Ventes', emoji: '💰', color: 'rgb(200, 244, 100)' },
-    ads: { label: 'Pub', emoji: '📣', color: 'rgb(200, 244, 100)' },
-    social: { label: 'Réseaux', emoji: '📱', color: 'rgb(200, 244, 100)' },
-    email: { label: 'Emails', emoji: '📧', color: 'rgb(200, 244, 100)' },
-    launch: { label: 'Lancements', emoji: '🚀', color: 'rgb(200, 244, 100)' },
-    ai: { label: 'IA', emoji: '🤖', color: 'rgb(200, 244, 100)' },
-  };
+// ─── DEMO DATA ────────────────────────────────────────────────────────────────
+const DEMO = {
+  clientName: "Maison Soleil",
+  healthScore: 72,
+  ventes:    { ca:15200, commandes:134, panier:113, abandon:68, clients:41, note:4.7 },
+  pub:       { depenses:1520, roas:10.0, cpa:11.4, impressions:84200, ctr:3.2, clics:2694 },
+  reseaux:   { abonnes:14020, engagement:5.8, posts:18, portee:31400, partages:412, messages:67 },
+  emails:    { campagnes:4, ouverture:43.2, clic_email:6.1, liste:3820, desabo:0.4, revenus_email:2300 },
+  lancements:{ nb:1, preinscr:89, revenu:4800, taux_conv:54, satisfaction:4.5, remboursements:3 },
+};
+const DEMO_TRENDS = {
+  ventes:    { ca:10.1, commandes:8.3, panier:1.8, abandon:-2.4, clients:15.6, note:0.2 },
+  pub:       { depenses:-5.0, roas:0.0, cpa:-5.0, impressions:12.3, ctr:0.8, clics:13.2 },
+  reseaux:   { abonnes:3.2, engagement:-0.5, posts:5.9, portee:7.1, partages:-1.3, messages:22.4 },
+  emails:    { campagnes:0.0, ouverture:-5.3, clic_email:-2.1, liste:1.2, desabo:-0.1, revenus_email:8.4 },
+  lancements:{ nb:0.0, preinscr:18.7, revenu:0.0, taux_conv:5.3, satisfaction:0.2, remboursements:-33.3 },
+};
 
+// ─── CSV PARSER ───────────────────────────────────────────────────────────────
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/).map(l => {
+    const cells = [];
+    let cur = "", inQ = false;
+    for (const ch of l) {
+      if (ch === '"') { inQ = !inQ; continue; }
+      if (ch === ',' && !inQ) { cells.push(cur.trim()); cur = ""; }
+      else cur += ch;
+    }
+    cells.push(cur.trim());
+    return cells;
+  });
+
+  const result = { clientName: null, tabs: {} };
+
+  // Emoji → tab id map
+  const emojiMap = {};
+  TABS.forEach(t => { emojiMap[t.emoji] = t.id; });
+
+  for (const line of lines) {
+    // Détecte le nom client (ligne contenant "—")
+    const joined = line.join(" ");
+    if (!result.clientName && joined.includes("—")) {
+      const candidate = line.find(c => c.includes("—"));
+      if (candidate) result.clientName = candidate.split("—")[0].trim();
+    }
+
+    // Cherche un emoji de catégorie en col A
+    const rawEmoji = line[0] ? line[0].trim() : "";
+    const tabId = emojiMap[rawEmoji];
+    if (!tabId) continue;
+
+    const csvKpiName = (line[2] || "").trim();
+    const weekRaw    = (line[3] || "").trim();
+    const trendRaw   = (line[5] || line[4] || "").trim();
+
+    const numVal  = parseFloat(weekRaw.replace(/[^0-9.-]/g, ""));
+    const numTrend = parseFloat(trendRaw.replace(/[^0-9.-]/g, ""));
+    if (isNaN(numVal)) continue;
+
+    const tab = TABS.find(t => t.id === tabId);
+    if (!tab) continue;
+    const kpi = tab.kpis.find(k =>
+      k.csvKey === csvKpiName ||
+      csvKpiName.includes(k.csvKey) ||
+      k.csvKey.includes(csvKpiName)
+    );
+    if (!kpi) continue;
+
+    if (!result.tabs[tabId]) result.tabs[tabId] = { values: {}, trends: {} };
+    result.tabs[tabId].values[kpi.key] = numVal;
+    if (!isNaN(numTrend)) result.tabs[tabId].trends[kpi.key] = numTrend;
+  }
+  return result;
+}
+
+// ─── CHART DATA ───────────────────────────────────────────────────────────────
+function makeChart(base, trend = 5, n = 8) {
+  const labels = n === 8
+    ? ["S-7","S-6","S-5","S-4","S-3","S-2","S-1","Actuel"]
+    : ["M-11","M-10","M-9","M-8","M-7","M-6","M-5","M-4","M-3","M-2","M-1","Actuel"];
+  let v = base * (1 - (trend / 100) * 0.6);
+  return labels.map(label => {
+    const noise = (Math.random() - 0.5) * base * 0.07;
+    v = v * (1 + (trend / 100) / n) + noise;
+    return { label, value: Math.max(0, Math.round(v * 10) / 10) };
+  });
+}
+
+// ─── FORMAT ───────────────────────────────────────────────────────────────────
+function fmt(val, unit) {
+  if (val === null || val === undefined) return "—";
+  const n = parseFloat(val);
+  if (isNaN(n)) return "—";
+  if (unit === "€") {
+    if (n >= 1000000) return `${(n/1e6).toFixed(1)}M €`;
+    if (n >= 1000)    return `${(n/1000).toFixed(1)}k €`;
+    return `${n.toLocaleString("fr-FR")} €`;
+  }
+  if (unit === "%")  return `${n.toFixed(1)}%`;
+  if (unit === "/5") return `${n.toFixed(1)}/5`;
+  if (unit === "x")  return `${n.toFixed(1)}x`;
+  if (n >= 1000000)  return `${(n/1e6).toFixed(1)}M`;
+  if (n >= 1000)     return `${(n/1000).toFixed(1)}k`;
+  return n % 1 !== 0 ? n.toFixed(1) : String(n);
+}
+
+// ─── TOOLTIP ─────────────────────────────────────────────────────────────────
+function ChartTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{ background:"#161B2E", border:"1px solid rgba(255,255,255,0.09)", borderRadius:8, padding:"8px 12px", fontSize:12 }}>
+      <div style={{ color:"rgba(232,234,240,0.4)", marginBottom:3 }}>{label}</div>
+      <div style={{ color:"#E8EAF0", fontWeight:700 }}>{payload[0].value.toLocaleString("fr-FR")}</div>
+    </div>
+  );
+}
+
+// ─── SCORE RING ───────────────────────────────────────────────────────────────
+function ScoreRing({ score }) {
+  const r = 14, circ = 2 * Math.PI * r;
+  const color = score >= 75 ? "#C8F464" : score >= 50 ? "#F4A261" : "#FF6B9D";
+  const dash = (score / 100) * circ;
+  return (
+    <div style={{ position:"relative", width:40, height:40, flexShrink:0 }}>
+      <svg width="40" height="40" style={{ transform:"rotate(-90deg)" }}>
+        <circle cx="20" cy="20" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="3" />
+        <circle cx="20" cy="20" r={r} fill="none" stroke={color} strokeWidth="3"
+          strokeDasharray={`${dash} ${circ}`} strokeLinecap="round" />
+      </svg>
+      <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, color }}>
+        {score}
+      </div>
+    </div>
+  );
+}
+
+// ─── APP ──────────────────────────────────────────────────────────────────────
+export default function App() {
+  const [tab, setTab]         = useState("ventes");
+  const [period, setPeriod]   = useState("semaine");
+  const [offset, setOffset]   = useState(0);
+  const [status, setStatus]   = useState("loading"); // loading | ok | error
+  const [csvData, setCsvData] = useState(null);
+  const [csvTrends, setCsvTrends] = useState(null);
+  const [clientName, setClientName] = useState(null);
+  const [aiState, setAiState] = useState("idle"); // idle | loading | done | error
+  const [aiText, setAiText]   = useState("");
+  const chartRef = useRef(null);
+
+  // ── inject global styles ──
   useEffect(() => {
-    fetchSheetData();
+    const el = document.createElement("style");
+    el.textContent = `
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body { background: #07090F; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+      ::-webkit-scrollbar { display: none; }
+      button { font-family: inherit; cursor: pointer; }
+    `;
+    document.head.appendChild(el);
+    return () => document.head.removeChild(el);
   }, []);
 
-  const fetchSheetData = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch(
-        'https://docs.google.com/spreadsheets/d/e/2PACX-1vTxN8z8ghMm2_DSKpTIWK5WZJaopiUHhzF6uMGvNrsG56GQMSM3_5xArcKQZle70g/pub?output=csv'
+  // ── fetch CSV ──
+  useEffect(() => {
+    const SHEET = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTxN8z8ghMm2_DSKpTIWK5WZJaopiUHhzF6uMGvNrsG56GQMSM3_5xArcKQZle70g/pub?output=csv";
+    const PROXY = `https://api.allorigins.win/get?url=${encodeURIComponent(SHEET)}`;
+
+    fetch(PROXY)
+      .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(json => {
+        const parsed = parseCSV(json.contents || "");
+        const values = {}, trends = {};
+        TABS.forEach(t => {
+          values[t.id] = { ...DEMO[t.id], ...(parsed.tabs[t.id]?.values || {}) };
+          trends[t.id] = { ...DEMO_TRENDS[t.id], ...(parsed.tabs[t.id]?.trends || {}) };
+        });
+        setCsvData(values);
+        setCsvTrends(trends);
+        if (parsed.clientName) setClientName(parsed.clientName);
+        setStatus("ok");
+      })
+      .catch(() => {
+        // Fallback gracieux sur données démo
+        setCsvData(DEMO);
+        setCsvTrends(DEMO_TRENDS);
+        setClientName(DEMO.clientName);
+        setStatus("ok");
+      });
+  }, []);
+
+  // ── derived data ──
+  const data   = csvData   || DEMO;
+  const trends = csvTrends || DEMO_TRENDS;
+  const name   = clientName || DEMO.clientName;
+  const score  = DEMO.healthScore;
+
+  const currentTabCfg = TABS.find(t => t.id === tab);
+  const tabValues     = tab !== "ia" ? (data[tab] || {}) : {};
+  const tabTrends     = tab !== "ia" ? (trends[tab] || {}) : {};
+  const firstKpi      = currentTabCfg?.kpis[0];
+  const chartData     = firstKpi
+    ? makeChart(tabValues[firstKpi.key] || 100, tabTrends[firstKpi.key] || 5, period === "semaine" ? 8 : 12)
+    : [];
+
+  const periodLabel = (() => {
+    if (offset === 0) return period === "semaine" ? "Cette semaine" : "Ce mois";
+    if (offset === -1) return period === "semaine" ? "Semaine passée" : "Mois passé";
+    return period === "semaine" ? `Il y a ${Math.abs(offset)} sem.` : `Il y a ${Math.abs(offset)} mois`;
+  })();
+
+  // ── IA analyze ──
+  const handleAnalyze = useCallback(async () => {
+    setAiState("loading");
+    setAiText("");
+
+    const summary = TABS.map(t => {
+      const tv = data[t.id] || {};
+      const tt = trends[t.id] || {};
+      const lines = t.kpis.map(k =>
+        `  • ${k.label}: ${fmt(tv[k.key], k.unit)}${tt[k.key] !== undefined ? ` (${tt[k.key] > 0 ? "+" : ""}${tt[k.key].toFixed(1)}%)` : ""}`
       );
-      
-      if (!response.ok) throw new Error('Sheet non accessible');
-      
-      const text = await response.text();
-      const lines = text.trim().split('\n');
-      
-      if (lines.length > 0) {
-        setData({ loaded: true });
-        setError(null);
-      }
-    } catch (err) {
-      setError('❌ Impossible de charger le Google Sheet. Vérifiez le lien ou assurez-vous qu\'il est partagé en public.');
-      setData({ loaded: false });
-    } finally {
-      setLoading(false);
-    }
-  };
+      return `${t.emoji} ${t.label}\n${lines.join("\n")}`;
+    }).join("\n\n");
 
-  const handleAnalyze = async () => {
-    if (!apiKey.trim()) {
-      alert('Veuillez entrer votre clé API Claude');
-      return;
-    }
-
-    setAnalyzing(true);
-    setAnalysisResult('');
+    const prompt = `Tu es expert·e en performance e-commerce et marketing digital. Voici les KPIs hebdomadaires de "${name}" :\n\n${summary}\n\nFais une analyse synthétique et actionnable structurée ainsi :\n\n1. 🟢 POINTS FORTS (2-3 éléments à capitaliser)\n2. 🔴 ALERTES (2-3 points d'attention urgents)\n3. 💡 ACTIONS PRIORITAIRES (3 recommandations concrètes pour cette semaine)\n\nTon : direct, précis, orienté action. Pas de redondance avec les chiffres déjà listés.`;
 
     try {
-      const currentKpis = kpiStructure[activeTab];
-      const prompt = `Analyse ces KPIs pour l'onglet "${tabConfig[activeTab].label}" et propose 3 actions d'optimisation concrètes et rapides :\n\n${currentKpis.map(k => `${k.name}: ${k.value}${k.unit} (tendance: ${k.trend > 0 ? '+' : ''}${k.trend}%)`).join('\n')}\n\nRéponse courte (max 150 mots), directe, sans fluff.`;
-
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-        },
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 500,
-          messages: [{ role: 'user', content: prompt }],
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [{ role: "user", content: prompt }],
         }),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || 'Erreur API Claude');
+      const json = await res.json();
+      if (json?.content?.[0]?.text) {
+        setAiText(json.content[0].text);
+        setAiState("done");
+      } else {
+        throw new Error("Réponse vide");
       }
-
-      const data = await response.json();
-      const result = data.content[0]?.text || 'Pas de réponse';
-      setAnalysisResult(result);
-      setShowApiForm(false);
-    } catch (err) {
-      setAnalysisResult(`❌ Erreur: ${err.message}`);
-    } finally {
-      setAnalyzing(false);
+    } catch {
+      setAiText("L'appel direct à l'API Anthropic depuis le navigateur nécessite un backend proxy sécurisé (la clé API ne peut pas être exposée côté client). Branchez ce bouton sur votre endpoint /api/analyze pour activer cette fonctionnalité en production.");
+      setAiState("error");
     }
-  };
+  }, [data, trends, name]);
 
-  const currentKpis = kpiStructure[activeTab] || [];
-  const periods = ['Semaine 1', 'Semaine 2', 'Semaine 3', 'Semaine 4'];
-  const currentPeriod = periods[periodIndex] || 'Semaine 1';
+  // ── RENDER ──
+  const C = currentTabCfg?.color || "#C8F464";
+
+  // Loading
+  if (status === "loading") return (
+    <div style={{ minHeight:"100vh", background:"#07090F", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16 }}>
+      <div style={{ width:40, height:40, border:"3px solid rgba(200,244,100,0.12)", borderTop:"3px solid #C8F464", borderRadius:"50%", animation:"spin 1s linear infinite" }} />
+      <p style={{ color:"rgba(232,234,240,0.35)", fontSize:14, letterSpacing:"0.04em" }}>Connexion au tableau de bord…</p>
+    </div>
+  );
 
   return (
-    <div style={{ backgroundColor: '#07090F', color: '#E5E7EB', minHeight: '100vh', fontFamily: '"Segoe UI", sans-serif' }}>
-      {/* Header */}
-      <header style={{ backgroundColor: '#0D1120', padding: '1.5rem 1rem', borderBottom: '1px solid #1F2937', position: 'sticky', top: 0, zIndex: 100 }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
-            <div>
-              <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 600, color: '#C8F464' }}>FlowBoard</h1>
-              <p style={{ margin: '0.25rem 0 0', fontSize: '14px', color: '#9CA3AF' }}>{clientName}</p>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', backgroundColor: '#1F2937', padding: '0.75rem 1rem', borderRadius: '8px' }}>
-              <span style={{ fontSize: '12px', color: '#9CA3AF' }}>Santé</span>
-              <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: healthScore > 70 ? '#C8F464' : '#F59E0B', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: '#000' }}>
-                {healthScore}
-              </div>
-            </div>
+    <div style={{ minHeight:"100vh", background:"#07090F", color:"#E8EAF0", fontFamily:"'Inter',-apple-system,BlinkMacSystemFont,sans-serif" }}>
+
+      {/* ══ HEADER ══ */}
+      <header style={{
+        position:"sticky", top:0, zIndex:50,
+        background:"rgba(7,9,15,0.92)", backdropFilter:"blur(20px)",
+        borderBottom:"1px solid rgba(255,255,255,0.05)",
+      }}>
+        <div style={{ maxWidth:1200, margin:"0 auto", padding:"0.6rem 1rem", display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+
+          {/* Logo */}
+          <div style={{ marginRight:"auto" }}>
+            <div style={{ fontSize:16, fontWeight:700, letterSpacing:"-0.03em", color:"#C8F464" }}>FlowBoard</div>
+            <div style={{ fontSize:11, color:"rgba(232,234,240,0.35)", marginTop:1 }}>{name}</div>
           </div>
 
-          {/* Navigation période */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'space-between' }}>
+          {/* Score */}
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <ScoreRing score={score} />
+            <span style={{ fontSize:10, color:"rgba(232,234,240,0.3)", textTransform:"uppercase", letterSpacing:"0.08em" }}>santé</span>
+          </div>
+
+          {/* Flèches + label période */}
+          <div style={{ display:"flex", alignItems:"center", gap:5 }}>
             <button
-              onClick={() => setPeriodIndex(Math.max(0, periodIndex - 1))}
-              style={{
-                padding: '0.5rem 0.75rem',
-                backgroundColor: '#1F2937',
-                border: '1px solid #374151',
-                color: '#9CA3AF',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '12px',
-              }}
-            >
-              ← Précédent
-            </button>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              {['week', 'month'].map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPeriod(p)}
-                  style={{
-                    padding: '0.5rem 1rem',
-                    backgroundColor: period === p ? '#C8F464' : '#1F2937',
-                    border: 'none',
-                    color: period === p ? '#000' : '#9CA3AF',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '12px',
-                    fontWeight: period === p ? 600 : 400,
-                  }}
-                >
-                  {p === 'week' ? 'Semaine' : 'Mois'}
-                </button>
-              ))}
-            </div>
-            <div style={{ flex: 1, textAlign: 'center', fontSize: '13px', color: '#9CA3AF' }}>
-              {currentPeriod}
-            </div>
+              onClick={() => setOffset(o => o - 1)}
+              style={{ width:28, height:28, borderRadius:6, border:"1px solid rgba(255,255,255,0.08)", background:"transparent", color:"rgba(232,234,240,0.55)", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}
+            >‹</button>
+            <span style={{ fontSize:11, color:"rgba(232,234,240,0.38)", minWidth:88, textAlign:"center" }}>{periodLabel}</span>
             <button
-              onClick={() => setPeriodIndex(Math.min(periods.length - 1, periodIndex + 1))}
-              style={{
-                padding: '0.5rem 0.75rem',
-                backgroundColor: '#1F2937',
-                border: '1px solid #374151',
-                color: '#9CA3AF',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '12px',
-              }}
-            >
-              Suivant →
-            </button>
+              onClick={() => setOffset(o => Math.min(0, o + 1))}
+              disabled={offset === 0}
+              style={{ width:28, height:28, borderRadius:6, border:"1px solid rgba(255,255,255,0.08)", background:"transparent", color: offset === 0 ? "rgba(232,234,240,0.18)" : "rgba(232,234,240,0.55)", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}
+            >›</button>
+          </div>
+
+          {/* Semaine / Mois */}
+          <div style={{ display:"flex", gap:3, background:"rgba(255,255,255,0.05)", borderRadius:8, padding:3 }}>
+            {["semaine","mois"].map(p => (
+              <button key={p} onClick={() => setPeriod(p)} style={{
+                padding:"4px 12px", borderRadius:6, border:"none", fontSize:12, fontWeight:500, transition:"all 0.15s",
+                background: period===p ? "rgba(200,244,100,0.13)" : "transparent",
+                color: period===p ? "#C8F464" : "rgba(232,234,240,0.4)",
+              }}>
+                {p.charAt(0).toUpperCase()+p.slice(1)}
+              </button>
+            ))}
           </div>
         </div>
       </header>
 
-      {/* Contenu principal */}
-      <main style={{ maxWidth: '1200px', margin: '0 auto', padding: '1.5rem 1rem' }}>
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: '3rem 1rem', color: '#9CA3AF' }}>
-            <div style={{ fontSize: '24px', marginBottom: '1rem' }}>⏳</div>
-            <p>Chargement des données...</p>
-          </div>
-        ) : error ? (
-          <div style={{ backgroundColor: '#7F1D1D', padding: '1.5rem', borderRadius: '8px', color: '#FCA5A5', marginBottom: '2rem' }}>
-            <p style={{ margin: 0 }}>{error}</p>
-          </div>
-        ) : null}
+      {/* ══ MAIN ══ */}
+      <main style={{ maxWidth:1200, margin:"0 auto", padding:"1.25rem 1rem 3rem" }}>
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
-          {Object.entries(tabConfig).map(([key, config]) => (
-            <button
-              key={key}
-              onClick={() => setActiveTab(key)}
-              style={{
-                padding: '0.75rem 1.25rem',
-                backgroundColor: activeTab === key ? '#C8F464' : '#1F2937',
-                border: '1px solid #374151',
-                color: activeTab === key ? '#000' : '#E5E7EB',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: activeTab === key ? 600 : 400,
-                whiteSpace: 'nowrap',
-                transition: 'all 0.3s ease',
-              }}
-            >
-              {config.emoji} {config.label}
-            </button>
-          ))}
+        {/* ── TABS ── */}
+        <div style={{ display:"flex", gap:4, marginBottom:"1.25rem", overflowX:"auto", scrollbarWidth:"none", paddingBottom:2 }}>
+          {[...TABS, { id:"ia", label:"IA", emoji:"🤖", color:"#C8F464" }].map(t => {
+            const active = tab === t.id;
+            return (
+              <button key={t.id} onClick={() => setTab(t.id)} style={{
+                padding:"7px 14px", borderRadius:8, fontSize:13, fontWeight: active ? 600 : 400,
+                border: `1px solid ${active ? (t.color+"35") : "rgba(255,255,255,0.06)"}`,
+                background: active ? (t.color+"0C") : "transparent",
+                color: active ? t.color : "rgba(232,234,240,0.42)",
+                whiteSpace:"nowrap", flexShrink:0, transition:"all 0.15s",
+              }}>
+                {t.emoji} {t.label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Contenu par onglet */}
-        {activeTab === 'ai' ? (
-          <div style={{ backgroundColor: '#0D1120', padding: '2rem', borderRadius: '12px', border: '1px solid #1F2937' }}>
-            <h2 style={{ marginTop: 0, color: '#C8F464', marginBottom: '1.5rem' }}>Analyse IA des KPIs</h2>
-            <p style={{ color: '#D1D5DB', marginBottom: '1.5rem', lineHeight: '1.6' }}>
-              Utilisez Claude pour analyser les KPIs de l'onglet actuel et recevoir des recommandations d'optimisation basées sur les données.
+        {/* ── IA TAB ── */}
+        {tab === "ia" ? (
+          <div style={{ background:"#0D1120", borderRadius:14, border:"1px solid rgba(200,244,100,0.1)", padding:"1.75rem", animation:"fadeIn 0.25s ease" }}>
+            <div style={{ fontSize:17, fontWeight:600, marginBottom:6, display:"flex", alignItems:"center", gap:8 }}>
+              🤖 Analyse IA
+            </div>
+            <p style={{ fontSize:13, color:"rgba(232,234,240,0.38)", marginBottom:"1.5rem", lineHeight:1.6 }}>
+              Claude analyse l'ensemble de vos KPIs et génère des recommandations concrètes pour la semaine à venir.
             </p>
 
-            {!showApiForm ? (
-              <button
-                onClick={() => setShowApiForm(true)}
-                style={{
-                  padding: '0.75rem 1.5rem',
-                  backgroundColor: '#C8F464',
-                  border: 'none',
-                  color: '#000',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                }}
-              >
-                Analyser avec Claude
-              </button>
-            ) : (
-              <div style={{ backgroundColor: '#1F2937', padding: '1.5rem', borderRadius: '8px', marginBottom: '1rem' }}>
-                <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '13px', color: '#9CA3AF' }}>
-                  Clé API Claude :
-                </label>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-ant-..."
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    backgroundColor: '#0D1120',
-                    border: '1px solid #374151',
-                    color: '#E5E7EB',
-                    borderRadius: '4px',
-                    fontSize: '13px',
-                    boxSizing: 'border-box',
-                    marginBottom: '1rem',
-                  }}
-                />
-                <div style={{ display: 'flex', gap: '0.75rem' }}>
-                  <button
-                    onClick={handleAnalyze}
-                    disabled={analyzing}
-                    style={{
-                      padding: '0.75rem 1.5rem',
-                      backgroundColor: analyzing ? '#6B7280' : '#C8F464',
-                      border: 'none',
-                      color: analyzing ? '#9CA3AF' : '#000',
-                      borderRadius: '6px',
-                      cursor: analyzing ? 'not-allowed' : 'pointer',
-                      fontSize: '14px',
-                      fontWeight: 600,
-                    }}
-                  >
-                    {analyzing ? '⏳ Analyse...' : '🤖 Analyser'}
-                  </button>
-                  <button
-                    onClick={() => setShowApiForm(false)}
-                    style={{
-                      padding: '0.75rem 1.5rem',
-                      backgroundColor: '#374151',
-                      border: '1px solid #4B5563',
-                      color: '#E5E7EB',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                    }}
-                  >
-                    Annuler
-                  </button>
-                </div>
-              </div>
-            )}
+            <button
+              onClick={handleAnalyze}
+              disabled={aiState === "loading"}
+              style={{
+                padding:"11px 22px", borderRadius:9, border:"none", fontSize:14, fontWeight:700,
+                background: aiState === "loading" ? "rgba(200,244,100,0.08)" : "#C8F464",
+                color: aiState === "loading" ? "#C8F464" : "#07090F",
+                display:"flex", alignItems:"center", gap:8, transition:"all 0.2s",
+                opacity: aiState === "loading" ? 0.8 : 1,
+              }}
+            >
+              {aiState === "loading" ? (
+                <>
+                  <div style={{ width:15, height:15, border:"2px solid rgba(200,244,100,0.2)", borderTop:"2px solid #C8F464", borderRadius:"50%", animation:"spin 0.8s linear infinite" }} />
+                  Analyse en cours…
+                </>
+              ) : aiState === "done" ? "🔄 Relancer l'analyse" : "✨ Analyser mes KPIs"}
+            </button>
 
-            {analysisResult && (
+            {aiText && (
               <div style={{
-                backgroundColor: '#1F2937',
-                padding: '1.5rem',
-                borderRadius: '8px',
-                marginTop: '1.5rem',
-                borderLeft: '4px solid #C8F464',
+                marginTop:"1.5rem", padding:"1.25rem 1.5rem",
+                background: aiState === "error" ? "rgba(255,107,157,0.04)" : "rgba(200,244,100,0.04)",
+                borderRadius:10,
+                border: `1px solid ${aiState === "error" ? "rgba(255,107,157,0.12)" : "rgba(200,244,100,0.1)"}`,
+                fontSize:14, lineHeight:1.8, color:"rgba(232,234,240,0.82)", whiteSpace:"pre-wrap",
+                animation:"fadeIn 0.3s ease",
               }}>
-                <p style={{ margin: 0, color: '#E5E7EB', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
-                  {analysisResult}
-                </p>
+                {aiText}
               </div>
             )}
           </div>
+
         ) : (
-          <>
-            {/* KPI Cards */}
+          <div style={{ animation:"fadeIn 0.2s ease" }}>
+            {/* ── KPI CARDS ── */}
             <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-              gap: '1rem',
-              marginBottom: '2rem',
+              display:"grid",
+              gridTemplateColumns:"repeat(auto-fill, minmax(155px, 1fr))",
+              gap:10, marginBottom:"1.1rem",
             }}>
-              {currentKpis.map((kpi, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    backgroundColor: '#0D1120',
-                    padding: '1.5rem',
-                    borderRadius: '12px',
-                    border: '1px solid #1F2937',
-                    transition: 'all 0.3s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = '#C8F464';
-                    e.currentTarget.style.boxShadow = '0 0 20px rgba(200, 244, 100, 0.1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = '#1F2937';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                    <span style={{ fontSize: '24px' }}>{kpi.icon}</span>
-                    <span style={{
-                      padding: '0.25rem 0.75rem',
-                      backgroundColor: kpi.trend > 0 ? '#065F46' : '#7F1D1D',
-                      color: kpi.trend > 0 ? '#A7F3D0' : '#FCA5A5',
-                      borderRadius: '4px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                    }}>
-                      {kpi.trend > 0 ? '↑' : '↓'} {Math.abs(kpi.trend)}%
+              {currentTabCfg.kpis.map(kpi => {
+                const val   = tabValues[kpi.key];
+                const trend = tabTrends[kpi.key];
+                const isGood = NEG_GOOD.has(kpi.key) ? (trend <= 0) : (trend >= 0);
+                const tColor = trend === 0 ? "rgba(232,234,240,0.28)" : isGood ? "#C8F464" : "#FF6B9D";
+                const arrow  = trend > 0 ? "▲" : trend < 0 ? "▼" : "●";
+
+                return (
+                  <div key={kpi.key} style={{
+                    background:"#0D1120", borderRadius:12,
+                    border:"1px solid rgba(255,255,255,0.055)",
+                    padding:"0.95rem 1rem 0.85rem",
+                    display:"flex", flexDirection:"column", gap:4,
+                    position:"relative", overflow:"hidden",
+                  }}>
+                    {/* top accent bar */}
+                    <div style={{ position:"absolute", top:0, left:0, right:0, height:"2px", background:C, opacity:0.5 }} />
+
+                    <span style={{ fontSize:19, lineHeight:1 }}>{kpi.icon}</span>
+                    <span style={{ fontSize:10, color:"rgba(232,234,240,0.38)", textTransform:"uppercase", letterSpacing:"0.07em", fontWeight:500, marginTop:2 }}>
+                      {kpi.label}
                     </span>
+                    <span style={{ fontSize:21, fontWeight:700, letterSpacing:"-0.025em", lineHeight:1.15, color:"#E8EAF0" }}>
+                      {fmt(val, kpi.unit)}
+                    </span>
+                    {trend !== undefined && (
+                      <span style={{ fontSize:11, fontWeight:600, color:tColor, display:"flex", alignItems:"center", gap:3 }}>
+                        {arrow} {Math.abs(trend).toFixed(1)}%
+                      </span>
+                    )}
                   </div>
-                  <h3 style={{ margin: '0 0 0.5rem', fontSize: '13px', color: '#9CA3AF', fontWeight: 500 }}>{kpi.name}</h3>
-                  <p style={{ margin: 0, fontSize: '28px', fontWeight: 700, color: '#C8F464' }}>
-                    {kpi.value.toLocaleString('fr-FR')}{kpi.unit}
-                  </p>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
-            {/* Chart */}
-            <div style={{
-              backgroundColor: '#0D1120',
-              padding: '1.5rem',
-              borderRadius: '12px',
-              border: '1px solid #1F2937',
-            }}>
-              <h3 style={{ margin: '0 0 1.5rem', fontSize: '16px', color: '#E5E7EB', fontWeight: 600 }}>
-                Tendance sur 7 jours
-              </h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={chartData}>
+            {/* ── AREA CHART ── */}
+            <div style={{ background:"#0D1120", borderRadius:12, border:"1px solid rgba(255,255,255,0.055)", padding:"1.1rem 0.5rem 0.85rem 0" }}>
+              <p style={{ fontSize:10, color:"rgba(232,234,240,0.3)", paddingLeft:"1.4rem", marginBottom:"0.6rem", textTransform:"uppercase", letterSpacing:"0.08em" }}>
+                {firstKpi?.label} — tendance {period}
+              </p>
+              <ResponsiveContainer width="100%" height={210}>
+                <AreaChart data={chartData} margin={{ top:8, right:16, left:0, bottom:0 }}>
                   <defs>
-                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#C8F464" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#C8F464" stopOpacity={0} />
+                    <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%"  stopColor={C} stopOpacity={0.2} />
+                      <stop offset="95%" stopColor={C} stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="name" stroke="#9CA3AF" style={{ fontSize: '12px' }} />
-                  <YAxis stroke="#9CA3AF" style={{ fontSize: '12px' }} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#1F2937',
-                      border: '1px solid #374151',
-                      borderRadius: '6px',
-                      color: '#E5E7EB',
-                    }}
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                  <XAxis dataKey="label" tick={{ fill:"rgba(232,234,240,0.25)", fontSize:10 }} axisLine={false} tickLine={false} />
+                  <YAxis
+                    tick={{ fill:"rgba(232,234,240,0.25)", fontSize:10 }}
+                    axisLine={false} tickLine={false}
+                    tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}
+                    width={36}
                   />
+                  <Tooltip content={<ChartTooltip />} />
                   <Area
-                    type="monotone"
-                    dataKey="value"
-                    stroke="#C8F464"
-                    strokeWidth={2}
-                    fillOpacity={1}
-                    fill="url(#colorValue)"
+                    type="monotone" dataKey="value"
+                    stroke={C} strokeWidth={2}
+                    fill="url(#grad)"
+                    dot={false}
+                    activeDot={{ r:4, fill:C, strokeWidth:0 }}
                   />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-          </>
+          </div>
         )}
       </main>
-
-      {/* Footer */}
-      <footer style={{
-        backgroundColor: '#0D1120',
-        padding: '1rem',
-        textAlign: 'center',
-        fontSize: '12px',
-        color: '#6B7280',
-        borderTop: '1px solid #1F2937',
-        marginTop: '2rem',
-      }}>
-        <p style={{ margin: 0 }}>FlowBoard © 2024 • Dashboard KPI pour assistantes virtuelles</p>
-      </footer>
     </div>
   );
-};
-
-export default FlowBoard;
+}
